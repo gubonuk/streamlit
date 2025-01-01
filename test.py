@@ -3,17 +3,13 @@ import pandas as pd
 import streamlit as st
 import webbrowser
 
-# st_aggrid 설치 필요
-# pip install streamlit-aggrid
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
-
-# 1) 파일 경로 설정 (원래 코드 그대로)
+# 파일 경로 설정
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_FOLDER = os.path.join(BASE_DIR, "output")  # Excel 파일들이 있는 폴더 (미리 존재한다고 가정)
 COMBINED_FILE_NAME = "기타작물.xlsx"
 CROPLINK_FILE = os.path.join(BASE_DIR, "croplinkmobile.txt")
 
-# croplink.txt 읽어서 {작물명: URL} 딕셔너리 (원래 코드 그대로)
+# croplink.txt 읽어서 {작물명: URL} 딕셔너리 만들기
 crop_link_map = {}
 if os.path.exists(CROPLINK_FILE):
     with open(CROPLINK_FILE, "r", encoding="utf-8") as f:
@@ -26,8 +22,9 @@ if os.path.exists(CROPLINK_FILE):
                     url = parts[1].strip()
                     crop_link_map[crop_name] = url
 
-# 2) search_pesticide 함수 (원래 코드 + 열 매핑)
+
 def search_pesticide(crop_name, disease_name):
+    # 엑셀 파일 결정
     crop_file = os.path.join(OUTPUT_FOLDER, f"{crop_name}.xlsx")
     if os.path.exists(crop_file):
         df = pd.read_excel(crop_file)
@@ -37,12 +34,21 @@ def search_pesticide(crop_name, disease_name):
             return None
         df = pd.read_excel(combined_file)
 
-    # 원래 열 이름 재매핑
+    # 실제 엑셀 파일에 들어있는 컬럼명 확인
+    # st.write(df.columns)  # 디버깅용
+
+    # --------------------------------------------------------
+    # 1) 필요하다면 header 옵션을 조정 (header=0 또는 header=None 등)
+    #    df = pd.read_excel(..., header=0)
+    #
+    # 2) "Unnamed: 2" 등을 우리가 원하는 최종 컬럼명으로 rename
+    #    예시: 3번째 컬럼 -> "작물명", 4번째 컬럼 -> "적용병해충"
+    # --------------------------------------------------------
     df = df.rename(columns={
         "농약제품목록": "번호",
         "Unnamed: 1": "등록번호",
-        "Unnamed: 2": "작물명",         
-        "Unnamed: 3": "적용병해충",     
+        "Unnamed: 2": "작물명",         # 3번째 열
+        "Unnamed: 3": "적용병해충",     # 4번째 열
         "Unnamed: 4": "품목명",
         "Unnamed: 5": "일반명",
         "Unnamed: 6": "주성분함량",
@@ -60,11 +66,11 @@ def search_pesticide(crop_name, disease_name):
         "Unnamed: 18": "안전사용횟수",
         "Unnamed: 19": "제형",
         "Unnamed: 20": "회사명",
-        # 만약 마지막 "작물명" 열이 중복이라면 중복 방지
-        "작물명": "작물명2"
+        # 만약 마지막 "작물명" 열이 정말 다른 정보라면 중복 피하려고 이름 변경
+        "작물명": "작물명2"    # 실제로는 어떤 정보인지 확인 후 적절히 수정
     })
 
-    # 공백 제거
+    # 공백 제거 (Series 전체에 대해)
     df["작물명"] = df["작물명"].astype(str).str.strip()
     df["적용병해충"] = df["적용병해충"].astype(str).str.strip()
 
@@ -73,13 +79,15 @@ def search_pesticide(crop_name, disease_name):
         df["작물명"].str.contains(crop_name, na=False) &
         df["적용병해충"].str.contains(disease_name, na=False)
     ]
+
     if filtered_df.empty:
         return None
+
     return filtered_df
 
-# 3) Streamlit 앱
-st.set_page_config(layout="wide")
-st.title("작물 질병도감 및 농약 검색 - (더블클릭 디버깅)")
+
+# ------------------- Streamlit 앱 -------------------
+st.title("작물 질병도감 및 농약 검색")
 
 # 작물 질병도감 링크 조회
 st.subheader("작물 질병도감")
@@ -90,7 +98,7 @@ if st.button("링크 열기"):
         if link:
             st.markdown(f"[{link}]({link})")
         else:
-            st.write("해당 작물에 대한 링크 정보가 없습니다.")
+            st.write("해당 작물에 대한 링크가 없습니다.")
     else:
         st.write("작물명을 선택하세요.")
 
@@ -99,9 +107,7 @@ st.subheader("농약 검색")
 crop_name_input = st.text_input("작물이름")
 disease_name_input = st.text_input("병해명")
 
-search_button = st.button("검색")
-
-if search_button:
+if st.button("검색"):
     if not crop_name_input or not disease_name_input:
         st.write("작물명과 병명을 모두 입력하세요.")
     else:
@@ -109,47 +115,4 @@ if search_button:
         if result is None or result.empty:
             st.write("검색 결과 없음")
         else:
-            st.write("검색 결과 (행을 더블클릭하면 확인)")
-
-            # ─────────────── st_aggrid (onRowDoubleClicked) ───────────────
-            gb = GridOptionsBuilder.from_dataframe(result)
-
-            # JS 콜백: 행 더블클릭 시 alert + console.log
-            custom_js = """
-            function(e) {
-                alert("DoubleClick row: " + JSON.stringify(e.data));
-                console.log("DoubleClick rowData:", e.data);
-
-                window.postMessage({
-                    'type': 'ROW_DOUBLE_CLICK',
-                    'rowData': e.data
-                }, '*');
-            }
-            """
-
-            gb.configure_grid_options(
-                onRowDoubleClicked=custom_js,
-                rowSelection='single',
-                suppressRowClickSelection=True
-            )
-
-            grid_opts = gb.build()
-            grid_response = AgGrid(
-                result,
-                gridOptions=grid_opts,
-                data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-                update_mode=GridUpdateMode.NO_UPDATE,
-                allow_unsafe_jscode=True,
-                height=600,
-                use_container_width=True
-            )
-
-            st.write("--- [Debug] grid_response ---")
-            st.write(grid_response)
-
-            # 더블클릭된 행이 selected_rows 로 들어오는지 확인
-            sel_rows = grid_response.get("selected_rows", [])
-            if sel_rows:
-                st.write("**더블클릭된 행**:", sel_rows[-1])
-            else:
-                st.write("아직 더블클릭된 행이 없습니다 (팝업, 콘솔로그도 확인).")
+            st.dataframe(result)
