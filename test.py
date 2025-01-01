@@ -1,7 +1,6 @@
 import os
 import pandas as pd
 import streamlit as st
-import webbrowser
 
 # 파일 경로 설정
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -22,25 +21,34 @@ if os.path.exists(CROPLINK_FILE):
                     url = parts[1].strip()
                     crop_link_map[crop_name] = url
 
-
+# 농약 검색 함수
 def search_pesticide(crop_name, disease_name):
     crop_file = os.path.join(OUTPUT_FOLDER, f"{crop_name}.xlsx")
 
+    # 파일 읽기
     if os.path.exists(crop_file):
-        df = pd.read_excel(crop_file)
+        df = pd.read_excel(crop_file, header=0)
     else:
         combined_file_path = os.path.join(OUTPUT_FOLDER, COMBINED_FILE_NAME)
         if not os.path.exists(combined_file_path):
             return None
-        df = pd.read_excel(combined_file_path)
+        df = pd.read_excel(combined_file_path, header=0)
 
-    filtered_df = df[(df.iloc[:, 2] == crop_name) & (df.iloc[:, 3] == disease_name)]
+    # 열 이름 설정
+    df.columns = [
+        "번호", "등록번호", "구분", "작물명", "적용병해충", "품목명", "일반명", "주성분함량",
+        "상표명", "인축독성", "어독성", "용도", "등록일", "작용기작", "희석배수", "사용량",
+        "사용적기", "사용방법", "안전사용시기", "안전사용횟수", "제형", "회사명"
+    ]
+
+    # 작물명과 병해명 필터링
+    filtered_df = df[(df["작물명"] == crop_name) & (df["적용병해충"] == disease_name)]
     if filtered_df.empty:
         return None
     else:
         return filtered_df
 
-
+# Streamlit 인터페이스
 st.title("작물 질병도감 및 농약 검색")
 
 # 작물 질병도감 링크 조회
